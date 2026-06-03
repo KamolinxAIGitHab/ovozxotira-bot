@@ -31,23 +31,23 @@ async def handle_voice_message(message: Message, bot: Bot) -> None:
         local_path=local_path,
     )
 
-    duration_str = f"{voice.duration}s" if voice.duration else "?"
+    duration_str = f"{voice.duration} сек" if voice.duration else "?"
 
     if not local_path:
-        await message.reply(f"\u26a0\ufe0f Fayl yuklab olinmadi ({duration_str}).")
+        await message.reply(f"\u26a0\ufe0f Файл юклаб олинмади ({duration_str}).")
         return
 
-    status_msg = await message.reply(f"\U0001f3a4 Ovozli xabar qabul qilindi ({duration_str}). Matnga aylantirilmoqda\u2026")
+    status_msg = await message.reply(f"\U0001f3a4 Овозли хабар қабул қилинди ({duration_str}). Матнга айлантирилмоқда\u2026")
 
     transcript = await transcription_service.transcribe(local_path)
 
     if transcript:
         await database.repository.update_transcript(record_id, transcript)
         await status_msg.edit_text(
-            f"\U0001f3a4 Saqlandi ({duration_str})\n\n\U0001f4dd <b>Transkripsiya:</b>\n{transcript}"
+            f"\U0001f3a4 Сақланди ({duration_str})\n\n\U0001f4dd <b>Транскрипция:</b>\n{transcript}"
         )
         logger.info("Transcribed user_id=%d id=%d: %s", user.id, record_id, transcript[:60])
     else:
         await status_msg.edit_text(
-            f"\U0001f3a4 Saqlandi ({duration_str})\n\n\u26a0\ufe0f Transkripsiya amalga oshmadi."
+            f"\U0001f3a4 Сақланди ({duration_str})\n\n\u26a0\ufe0f Транскрипция амалга ошмади."
         )
