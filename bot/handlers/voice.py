@@ -34,20 +34,20 @@ async def handle_voice_message(message: Message, bot: Bot) -> None:
     duration_str = f"{voice.duration}s" if voice.duration else "?"
 
     if not local_path:
-        await message.reply(f"⚠️ Metadata saved but file download failed ({duration_str}).")
+        await message.reply(f"\u26a0\ufe0f Fayl yuklab olinmadi ({duration_str}).")
         return
 
-    status_msg = await message.reply(f"🎤 Voice message received ({duration_str}). Transcribing…")
+    status_msg = await message.reply(f"\U0001f3a4 Ovozli xabar qabul qilindi ({duration_str}). Matnga aylantirilmoqda\u2026")
 
     transcript = await transcription_service.transcribe(local_path)
 
     if transcript:
         await database.repository.update_transcript(record_id, transcript)
         await status_msg.edit_text(
-            f"🎤 Voice saved ({duration_str})\n\n📝 <b>Transcript:</b>\n{transcript}"
+            f"\U0001f3a4 Saqlandi ({duration_str})\n\n\U0001f4dd <b>Transkripsiya:</b>\n{transcript}"
         )
         logger.info("Transcribed user_id=%d id=%d: %s", user.id, record_id, transcript[:60])
     else:
         await status_msg.edit_text(
-            f"🎤 Voice saved ({duration_str})\n\n⚠️ Transcription failed."
+            f"\U0001f3a4 Saqlandi ({duration_str})\n\n\u26a0\ufe0f Transkripsiya amalga oshmadi."
         )
