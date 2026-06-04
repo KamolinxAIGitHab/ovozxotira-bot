@@ -116,7 +116,7 @@ async def cmd_search(message: Message) -> None:
         return
     lines = [f'\U0001f50d <b>"{query}"</b> \u2014 {len(results)} та натижа\n']
     for msg in results[:10]:
-        date_str = (msg.get("created_at") or "")[:10]
+        date_str = str(msg.get("created_at") or "")[:10]
         time_str = str(msg.get("created_at") or "")[11:16]
         transcript = msg.get("transcript", "")
         lines.append(f"\U0001f4c5 {date_str} {time_str}\n{transcript}\n")
