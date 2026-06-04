@@ -59,7 +59,7 @@ async def cmd_today(message: Message) -> None:
         "",
     ]
     for i, msg in enumerate(messages, 1):
-        time_str = (msg.get("created_at") or "")[11:16]
+        time_str = str(msg.get("created_at") or "")[11:16]
         transcript = msg.get("transcript") or "\u23f3 <i>транскрипция қилинмоқда\u2026</i>"
         lines.append(f"{i}. [{time_str}] {transcript}")
     await message.answer("\n".join(lines))
@@ -117,7 +117,7 @@ async def cmd_search(message: Message) -> None:
     lines = [f'\U0001f50d <b>"{query}"</b> \u2014 {len(results)} та натижа\n']
     for msg in results[:10]:
         date_str = (msg.get("created_at") or "")[:10]
-        time_str = (msg.get("created_at") or "")[11:16]
+        time_str = str(msg.get("created_at") or "")[11:16]
         transcript = msg.get("transcript", "")
         lines.append(f"\U0001f4c5 {date_str} {time_str}\n{transcript}\n")
     if len(results) > 10:
@@ -133,8 +133,8 @@ async def cmd_stats(message: Message) -> None:
     if not stats or stats.get("total_messages", 0) == 0:
         await message.answer("\U0001f50d Ҳали овозли хабар йўқ. Биринчи овозли хабарингизни юборинг!")
         return
-    first = (stats.get("first_message") or "")[:10] or "N/A"
-    last = (stats.get("last_message") or "")[:10] or "N/A"
+    first = str(stats.get("first_message") or "")[:10] or "N/A"
+    last = str(stats.get("last_message") or "")[:10] or "N/A"
     await message.answer(
         "<b>\U0001f4c8 Овоз статистикангиз</b>\n\n"
         f"\U0001f3a4 Жами хабарлар: <b>{stats['total_messages']}</b>\n"
