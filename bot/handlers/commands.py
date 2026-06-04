@@ -23,7 +23,8 @@ async def cmd_start(message: Message) -> None:
         "/yesterday \u2014 кечаги хулоса\n"
         "/search \u2014 транскрипциялардан қидириш\n"
         "/stats \u2014 умумий статистика\n"
-        "/help \u2014 барча буйруқлар"
+        "/help \u2014 барча буйруқлар\n"
+                "/export \u2014 Excel файл юклаш"
     )
 
 
