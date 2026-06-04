@@ -10,12 +10,12 @@ logger = logging.getLogger(__name__)
 
 def format_duration(seconds: int) -> str:
     if seconds < 60:
-        return f"{seconds}s"
+        return f"{seconds} сония"
     minutes, secs = divmod(seconds, 60)
     if minutes < 60:
-        return f"{minutes}m {secs}s"
+        return f"{minutes} дақиқа {secs} сония"
     hours, mins = divmod(minutes, 60)
-    return f"{hours}h {mins}m {secs}s"
+    return f"{hours} соат {mins} дақиқа"
 
 
 def _build_summary_text(target_date: date, messages: list[dict]) -> str:
@@ -23,21 +23,20 @@ def _build_summary_text(target_date: date, messages: list[dict]) -> str:
     total_duration = sum(m.get("duration") or 0 for m in messages)
 
     lines = [
-        f"📊 <b>Daily Voice Summary — {target_date.strftime('%B %d, %Y')}</b>",
-        f"🎤 {count} messages  |  ⏱ {format_duration(total_duration)} total",
+        f"\U0001f4ca <b>Кунлик хулоса \u2014 {target_date.strftime('%d.%m.%Y')}</b>",
+        f"\U0001f3a4 {count} та хабар  |  \u23f1 {format_duration(total_duration)}",
         "",
     ]
 
     for i, msg in enumerate(messages, 1):
-        time_str = (msg.get("created_at") or "")[ 11:16]  # HH:MM
-        transcript = msg.get("transcript") or "<i>transcription unavailable</i>"
+        time_str = (msg.get("created_at") or "")[11:16]
+        transcript = msg.get("transcript") or "<i>транскрипция мавжуд эмас</i>"
         lines.append(f"{i}. [{time_str}] {transcript}")
 
     return "\n".join(lines)
 
 
 async def generate_daily_summary(bot: Bot, target_date: date | None = None) -> None:
-    """Generate and send daily summaries based on transcripts to all active users."""
     if target_date is None:
         target_date = date.today() - timedelta(days=1)
 
@@ -70,7 +69,6 @@ async def generate_daily_summary(bot: Bot, target_date: date | None = None) -> N
 
 
 async def get_or_generate_summary(bot: Bot, user_id: int, target_date: date) -> str | None:
-    """Return cached summary text or generate on demand."""
     existing = await database.repository.get_user_summary(user_id, target_date)
     if existing:
         return existing["summary_text"]
