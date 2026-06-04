@@ -9,12 +9,12 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.config import BOT_TOKEN, SUMMARY_HOUR, SUMMARY_MINUTE, VOICE_DIR, SUMMARIES_DIR
 from bot.database.repository import init_db
-from bot.handlers import commands, voice
+from bot.handlers import commands, voice, export
 from bot.services.summary_service import generate_daily_summary
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s — %(message)s",
+    format="%(asctime)s | %(levelname)-8s | %(name)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,7 @@ async def main() -> None:
     dp = Dispatcher()
     dp.include_router(commands.router)
     dp.include_router(voice.router)
+    dp.include_router(export.router)
 
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(
@@ -45,7 +46,7 @@ async def main() -> None:
         replace_existing=True,
     )
     scheduler.start()
-    logger.info("Scheduler started — daily summaries at %02d:%02d UTC", SUMMARY_HOUR, SUMMARY_MINUTE)
+    logger.info("Scheduler started - daily summaries at %02d:%02d UTC", SUMMARY_HOUR, SUMMARY_MINUTE)
 
     logger.info("Bot polling started")
     try:
