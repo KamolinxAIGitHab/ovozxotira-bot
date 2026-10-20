@@ -1,12 +1,13 @@
 import html
 import logging
+import time
 
 from aiogram import Bot, F, Router
 from aiogram.types import Message
 
 from bot import database
 from bot.services import transcription_service, voice_service
-from bot.timeutil import reply_time
+from bot.timeutil import format_elapsed, reply_time
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +65,14 @@ async def handle_voice_message(message: Message, bot: Bot) -> None:
     )
 
     mode = await database.repository.get_lang_mode(user.id)
+    started = time.monotonic()
     transcript = await transcription_service.transcribe(local_path, mode)
+    elapsed = format_elapsed(time.monotonic() - started)
 
     if transcript:
         await database.repository.update_transcript(record_id, transcript)
 
-        header = f"\U0001f3a4 Сақланди ({duration_str})  \U0001f552 {reply_time()}\n\n\U0001f4dd <b>Транскрипция:</b>\n"
+        header = f"\U0001f3a4 Сақланди ({duration_str})  \U0001f552 {reply_time()}\n⏱ Транскрипция вақти: {elapsed}\n\n\U0001f4dd <b>Транскрипция:</b>\n"
         parts = [html.escape(p) for p in split_text(transcript)]
 
         if len(parts) == 1:
@@ -82,5 +85,5 @@ async def handle_voice_message(message: Message, bot: Bot) -> None:
         logger.info("Transcribed user_id=%d id=%d: %s", user.id, record_id, transcript[:60])
     else:
         await status_msg.edit_text(
-            f"\U0001f3a4 Сақланди ({duration_str})  \U0001f552 {reply_time()}\n\n\u26a0\ufe0f Транскрипция амалга ошмади."
+            f"\U0001f3a4 Сақланди ({duration_str})  \U0001f552 {reply_time()}\n⏱ Транскрипция вақти: {elapsed}\n\n\u26a0\ufe0f Транскрипция амалга ошмади."
         )

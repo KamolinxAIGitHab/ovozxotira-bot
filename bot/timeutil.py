@@ -48,6 +48,14 @@ def day_bounds_utc(day: date) -> tuple[datetime, datetime]:
     return start, start + timedelta(days=1)
 
 
+def format_elapsed(seconds: float) -> str:
+    """Масалан: 4,2 сония; 1 дақиқа 5 сония."""
+    if seconds < 60:
+        return f"{seconds:.1f}".replace(".", ",") + " сония"
+    minutes, secs = divmod(int(round(seconds)), 60)
+    return f"{minutes} дақиқа {secs} сония"
+
+
 def is_stale(value, minutes: int = 10) -> bool:
     dt = to_local(value)
     return bool(dt) and now_local() - dt > timedelta(minutes=minutes)

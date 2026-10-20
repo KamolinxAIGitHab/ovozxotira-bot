@@ -5,7 +5,7 @@ import os
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeDefault
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.config import BOT_TOKEN, SUMMARY_HOUR, SUMMARY_MINUTE, VOICE_DIR, SUMMARIES_DIR
@@ -31,19 +31,23 @@ async def main() -> None:
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
-    try:
-        await bot.set_my_commands([
-            BotCommand(command="today", description="Бугунги хабарлар"),
-            BotCommand(command="summary", description="Бугунги қисқа статистика"),
-            BotCommand(command="yesterday", description="Кечаги хулоса"),
-            BotCommand(command="search", description="Транскрипциядан қидириш"),
-            BotCommand(command="stats", description="Умумий статистика"),
-            BotCommand(command="lang", description="Транскрипция тили ва ёзуви"),
-            BotCommand(command="export", description="Excel файл юклаш"),
-            BotCommand(command="help", description="Барча буйруқлар"),
-        ])
-    except Exception:
-        logger.exception("Failed to set bot commands")
+    commands_list = [
+        BotCommand(command="today", description="Бугунги хабарлар"),
+        BotCommand(command="summary", description="Бугунги қисқа статистика"),
+        BotCommand(command="yesterday", description="Кечаги хулоса"),
+        BotCommand(command="search", description="Транскрипциядан қидириш"),
+        BotCommand(command="stats", description="Умумий статистика"),
+        BotCommand(command="lang", description="Транскрипция тили ва ёзуви"),
+        BotCommand(command="export", description="Excel файл юклаш"),
+        BotCommand(command="help", description="Барча буйруқлар"),
+    ]
+    # Бир хил рўйхат барча қурилма ва тил созламалари учун (эски рўйхатлар устидан ёзилади)
+    for scope in (BotCommandScopeDefault(), BotCommandScopeAllPrivateChats()):
+        for lang in (None, "uz", "ru", "en"):
+            try:
+                await bot.set_my_commands(commands_list, scope=scope, language_code=lang)
+            except Exception:
+                logger.exception("Failed to set bot commands (scope=%s, lang=%s)", scope.type, lang)
 
     dp = Dispatcher()
     dp.include_router(commands.router)
