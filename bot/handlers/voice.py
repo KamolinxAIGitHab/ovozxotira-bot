@@ -1,5 +1,6 @@
 import html
 import logging
+from datetime import datetime, timedelta, timezone
 
 from aiogram import Bot, F, Router
 from aiogram.types import Message
@@ -8,6 +9,15 @@ from bot import database
 from bot.services import transcription_service, voice_service
 
 logger = logging.getLogger(__name__)
+
+# Ўзбекистон вақти (UTC+5, ёзги вақтга ўтиш йўқ)
+UZ_TZ = timezone(timedelta(hours=5))
+
+
+def reply_time() -> str:
+    return datetime.now(UZ_TZ).strftime("%H:%M:%S")
+
+
 router = Router(name="voice")
 
 MAX_MSG_LEN = 4000
@@ -67,7 +77,7 @@ async def handle_voice_message(message: Message, bot: Bot) -> None:
     if transcript:
         await database.repository.update_transcript(record_id, transcript)
 
-        header = f"\U0001f3a4 Сақланди ({duration_str})\n\n\U0001f4dd <b>Транскрипция:</b>\n"
+        header = f"\U0001f3a4 Сақланди ({duration_str})  \U0001f552 {reply_time()}\n\n\U0001f4dd <b>Транскрипция:</b>\n"
         parts = [html.escape(p) for p in split_text(transcript)]
 
         if len(parts) == 1:
@@ -80,5 +90,5 @@ async def handle_voice_message(message: Message, bot: Bot) -> None:
         logger.info("Transcribed user_id=%d id=%d: %s", user.id, record_id, transcript[:60])
     else:
         await status_msg.edit_text(
-            f"\U0001f3a4 Сақланди ({duration_str})\n\n\u26a0\ufe0f Транскрипция амалга ошмади."
+            f"\U0001f3a4 Сақланди ({duration_str})  \U0001f552 {reply_time()}\n\n\u26a0\ufe0f Транскрипция амалга ошмади."
         )

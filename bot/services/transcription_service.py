@@ -97,18 +97,39 @@ async def _convert_script(text: str, target: str) -> str:
         return text
 
 
+async def _translate_to_russian(text: str) -> str:
+    """Translate Uzbek text to Russian. On any error the original text is returned."""
+    try:
+        resp = await client.chat.completions.create(
+            model=TEXT_MODEL,
+            temperature=0,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Translate the user's Uzbek text (Latin or Cyrillic script) "
+                        "into natural, accurate Russian. Keep names, numbers and "
+                        "brand names. Output only the translation."
+                    ),
+                },
+                {"role": "user", "content": text},
+            ],
+        )
+        return (resp.choices[0].message.content or "").strip() or text
+    except Exception:
+        logger.exception("Translation to Russian failed")
+        return text
+
+
 async def transcribe(audio_path: str, mode: str = "uz_cyr") -> Optional[str]:
     """mode: 'uz_cyr' | 'uz_lat' | 'ru'.
 
-    - ru: speech is treated as Russian.
-    - uz_cyr / uz_lat: language detection and the Uzbek transcription run in
-      parallel (faster). Russian speech is re-transcribed as Russian, Uzbek
-      speech is returned in Cyrillic or Latin script as chosen.
+    Language detection and the Uzbek transcription run in parallel (faster).
+    Russian speech is always transcribed as Russian. Uzbek speech is returned
+    in Cyrillic or Latin script (uz_cyr / uz_lat), or translated into Russian
+    (ru).
     """
     try:
-        if mode == "ru":
-            return await _transcribe_ru(audio_path)
-
         lang, uz_text = await asyncio.gather(
             _detect_language(audio_path),
             _transcribe_uz(audio_path),
@@ -124,6 +145,8 @@ async def transcribe(audio_path: str, mode: str = "uz_cyr") -> Optional[str]:
         text = uz_text
         if not text:
             return None
+        if mode == "ru":
+            return await _translate_to_russian(text)
 
         cyr, lat = _script_counts(text)
         if mode == "uz_cyr" and lat > cyr:
