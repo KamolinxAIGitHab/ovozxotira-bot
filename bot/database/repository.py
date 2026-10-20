@@ -216,3 +216,14 @@ async def set_lang_mode(user_id: int, mode: str) -> None:
             """,
             user_id, mode,
         )
+
+
+
+async def get_transcript(record_id: int, user_id: int) -> Optional[str]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT transcript FROM voice_messages WHERE id = $1 AND user_id = $2",
+            record_id, user_id,
+        )
+    return row["transcript"] if row else None
