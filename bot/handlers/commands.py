@@ -1,4 +1,5 @@
-from datetime import date, timedelta
+import html
+from datetime import timedelta
 
 from aiogram import Bot, Router
 from aiogram.filters import Command
@@ -6,6 +7,8 @@ from aiogram.types import Message
 
 from bot import database
 from bot.services.summary_service import format_duration, get_or_generate_summary
+from bot.textutil import answer_long
+from bot.timeutil import fmt_date, fmt_time, is_stale, today_local
 
 router = Router(name="commands")
 
@@ -51,7 +54,7 @@ async def cmd_today(message: Message) -> None:
     if message.from_user is None:
         return
     user_id = message.from_user.id
-    today = date.today()
+    today = today_local()
     messages = await database.repository.get_voice_messages_by_date(user_id, today)
     if not messages:
         await message.answer(f"\U0001f50d Бугун овозли хабар йўқ ({today.isoformat()}).")
@@ -63,10 +66,16 @@ async def cmd_today(message: Message) -> None:
         "",
     ]
     for i, msg in enumerate(messages, 1):
-        time_str = str(msg.get("created_at") or "")[11:16]
-        transcript = msg.get("transcript") or "\u23f3 <i>транскрипция қилинмоқда\u2026</i>"
+        created = msg.get("created_at")
+        time_str = fmt_time(created)
+        if msg.get("transcript"):
+            transcript = html.escape(msg["transcript"])
+        elif is_stale(created):
+            transcript = "\u26a0\ufe0f <i>транскрипция амалга ошмади</i>"
+        else:
+            transcript = "\u23f3 <i>транскрипция қилинмоқда\u2026</i>"
         lines.append(f"{i}. [{time_str}] {transcript}")
-    await message.answer("\n".join(lines))
+    await answer_long(message, "\n".join(lines))
 
 
 @router.message(Command("summary"))
@@ -74,7 +83,7 @@ async def cmd_summary(message: Message) -> None:
     if message.from_user is None:
         return
     user_id = message.from_user.id
-    today = date.today()
+    today = today_local()
     messages = await database.repository.get_voice_messages_by_date(user_id, today)
     if not messages:
         await message.answer(f"\U0001f50d Бугун овозли хабар йўқ ({today.isoformat()}).")
@@ -94,7 +103,7 @@ async def cmd_summary(message: Message) -> None:
 async def cmd_yesterday(message: Message, bot: Bot) -> None:
     if message.from_user is None:
         return
-    yesterday = date.today() - timedelta(days=1)
+    yesterday = today_local() - timedelta(days=1)
     summary_text = await get_or_generate_summary(bot, message.from_user.id, yesterday)
     if summary_text:
         await message.answer(summary_text)
@@ -114,19 +123,19 @@ async def cmd_search(message: Message) -> None:
         )
         return
     query = parts[1].strip()
+    safe_q = html.escape(query)
     results = await database.repository.search_transcripts(message.from_user.id, query)
     if not results:
-        await message.answer(f'\U0001f50d "<b>{query}</b>" бўйича натижа топилмади.')
+        await message.answer(f'\U0001f50d "<b>{safe_q}</b>" бўйича натижа топилмади.')
         return
-    lines = [f'\U0001f50d <b>"{query}"</b> \u2014 {len(results)} та натижа\n']
+    lines = [f'\U0001f50d <b>"{safe_q}"</b> \u2014 {len(results)} та натижа\n']
     for msg in results[:10]:
-        date_str = str(msg.get("created_at") or "")[:10]
-        time_str = str(msg.get("created_at") or "")[11:16]
-        transcript = msg.get("transcript", "")
-        lines.append(f"\U0001f4c5 {date_str} {time_str}\n{transcript}\n")
+        created = msg.get("created_at")
+        transcript = html.escape(msg.get("transcript") or "")
+        lines.append(f"\U0001f4c5 {fmt_date(created)} {fmt_time(created)}\n{transcript}\n")
     if len(results) > 10:
         lines.append(f"<i>\u2026ва яна {len(results) - 10} та</i>")
-    await message.answer("\n".join(lines))
+    await answer_long(message, "\n".join(lines))
 
 
 @router.message(Command("stats"))
@@ -137,8 +146,8 @@ async def cmd_stats(message: Message) -> None:
     if not stats or stats.get("total_messages", 0) == 0:
         await message.answer("\U0001f50d Ҳали овозли хабар йўқ. Биринчи овозли хабарингизни юборинг!")
         return
-    first = str(stats.get("first_message") or "")[:10] or "N/A"
-    last = str(stats.get("last_message") or "")[:10] or "N/A"
+    first = fmt_date(stats.get("first_message")) or "N/A"
+    last = fmt_date(stats.get("last_message")) or "N/A"
     await message.answer(
         "<b>\U0001f4c8 Овоз статистикангиз</b>\n\n"
         f"\U0001f3a4 Жами хабарлар: <b>{stats['total_messages']}</b>\n"

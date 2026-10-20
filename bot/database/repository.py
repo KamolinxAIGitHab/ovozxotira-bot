@@ -3,6 +3,8 @@ import asyncpg
 from datetime import date
 from typing import Optional
 
+from bot.timeutil import day_bounds_utc
+
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 _pool: Optional[asyncpg.Pool] = None
@@ -88,15 +90,16 @@ async def update_transcript(record_id: int, transcript: str) -> None:
 
 
 async def get_voice_messages_by_date(user_id: int, target_date: date) -> list[dict]:
+    start, end = day_bounds_utc(target_date)
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
             SELECT * FROM voice_messages
-            WHERE user_id = $1 AND DATE(created_at) = $2
+            WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
             ORDER BY created_at
             """,
-            user_id, target_date,
+            user_id, start, end,
         )
         return [dict(row) for row in rows]
 
@@ -119,15 +122,16 @@ async def search_transcripts(user_id: int, query: str) -> list[dict]:
 
 
 async def get_all_users_with_messages_on_date(target_date: date) -> list[dict]:
+    start, end = day_bounds_utc(target_date)
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
             SELECT DISTINCT user_id, username, first_name
             FROM voice_messages
-            WHERE DATE(created_at) = $1
+            WHERE created_at >= $1 AND created_at < $2
             """,
-            target_date,
+            start, end,
         )
         return [dict(row) for row in rows]
 

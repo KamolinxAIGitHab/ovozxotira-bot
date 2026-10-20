@@ -1,6 +1,6 @@
 import io
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 import openpyxl
 from aiogram import Router
@@ -8,6 +8,7 @@ from aiogram.filters import Command
 from aiogram.types import BufferedInputFile, Message
 
 from bot import database
+from bot.timeutil import fmt_date, fmt_time, today_local
 
 logger = logging.getLogger(__name__)
 router = Router(name="export")
@@ -32,7 +33,7 @@ async def cmd_export(message: Message) -> None:
     if first:
         start_date = first.date() if hasattr(first, 'date') else date.fromisoformat(str(first)[:10])
     else:
-        start_date = date.today()
+        start_date = today_local()
 
     # Workbook яратиш
     wb = openpyxl.Workbook()
@@ -50,9 +51,8 @@ async def cmd_export(message: Message) -> None:
         cell.font = openpyxl.styles.Font(bold=True, color="FFFFFF")
 
     # Маълумотлар — охирги 30 кун
-    from datetime import timedelta
     all_messages = []
-    current = date.today()
+    current = today_local()
     for i in range(30):
         d = current - timedelta(days=i)
         msgs = await database.repository.get_voice_messages_by_date(user_id, d)
@@ -61,13 +61,8 @@ async def cmd_export(message: Message) -> None:
     # Сатрлар
     for row_num, msg in enumerate(all_messages, 2):
         created = msg.get("created_at")
-        if hasattr(created, 'date'):
-            date_str = created.strftime("%d.%m.%Y")
-            time_str = created.strftime("%H:%M")
-        else:
-            created_str = str(created) or ""
-            date_str = created_str[:10]
-            time_str = created_str[11:16]
+        date_str = fmt_date(created)
+        time_str = fmt_time(created)
 
         ws.cell(row=row_num, column=1, value=row_num - 1)
         ws.cell(row=row_num, column=2, value=date_str)
@@ -87,7 +82,7 @@ async def cmd_export(message: Message) -> None:
     wb.save(buffer)
     buffer.seek(0)
 
-    filename = f"ovozxotira_{date.today().strftime('%Y%m%d')}.xlsx"
+    filename = f"ovozxotira_{today_local().strftime('%Y%m%d')}.xlsx"
     await message.answer_document(
         BufferedInputFile(buffer.getvalue(), filename=filename),
         caption=f"\U0001f4ca <b>Транскрипциялар экспорти</b>\n"

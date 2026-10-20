@@ -1,9 +1,12 @@
+import html
 import logging
-from datetime import date, timedelta
+from datetime import date
 
 from aiogram import Bot
 
 from bot import database
+from bot.textutil import chunk_text
+from bot.timeutil import fmt_time, today_local
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +32,11 @@ def _build_summary_text(target_date: date, messages: list[dict]) -> str:
     ]
 
     for i, msg in enumerate(messages, 1):
-        time_str = (msg.get("created_at") or "")[11:16]
-        transcript = msg.get("transcript") or "<i>транскрипция мавжуд эмас</i>"
+        time_str = fmt_time(msg.get("created_at"))
+        if msg.get("transcript"):
+            transcript = html.escape(msg["transcript"])
+        else:
+            transcript = "<i>транскрипция мавжуд эмас</i>"
         lines.append(f"{i}. [{time_str}] {transcript}")
 
     return "\n".join(lines)
@@ -38,7 +44,7 @@ def _build_summary_text(target_date: date, messages: list[dict]) -> str:
 
 async def generate_daily_summary(bot: Bot, target_date: date | None = None) -> None:
     if target_date is None:
-        target_date = date.today() - timedelta(days=1)
+        target_date = today_local()
 
     users = await database.repository.get_all_users_with_messages_on_date(target_date)
     logger.info("Generating summaries for %d users on %s", len(users), target_date)
@@ -62,17 +68,14 @@ async def generate_daily_summary(bot: Bot, target_date: date | None = None) -> N
         )
 
         try:
-            await bot.send_message(user_id, summary_text)
+            for part in chunk_text(summary_text):
+                await bot.send_message(user_id, part)
             logger.info("Summary sent to user_id=%d", user_id)
         except Exception:
             logger.exception("Failed to send summary to user_id=%d", user_id)
 
 
 async def get_or_generate_summary(bot: Bot, user_id: int, target_date: date) -> str | None:
-    existing = await database.repository.get_user_summary(user_id, target_date)
-    if existing:
-        return existing["summary_text"]
-
     messages = await database.repository.get_voice_messages_by_date(user_id, target_date)
     if not messages:
         return None

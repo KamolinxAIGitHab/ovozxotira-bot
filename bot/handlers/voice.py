@@ -1,22 +1,14 @@
 import html
 import logging
-from datetime import datetime, timedelta, timezone
 
 from aiogram import Bot, F, Router
 from aiogram.types import Message
 
 from bot import database
 from bot.services import transcription_service, voice_service
+from bot.timeutil import reply_time
 
 logger = logging.getLogger(__name__)
-
-# Ўзбекистон вақти (UTC+5, ёзги вақтга ўтиш йўқ)
-UZ_TZ = timezone(timedelta(hours=5))
-
-
-def reply_time() -> str:
-    return datetime.now(UZ_TZ).strftime("%H:%M:%S")
-
 
 router = Router(name="voice")
 
