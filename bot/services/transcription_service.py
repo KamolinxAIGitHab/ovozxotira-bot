@@ -51,15 +51,29 @@ async def _detect_language(audio_path: str) -> str:
         return "uz"
 
 
-async def _transcribe(audio_path: str, lang: str) -> Optional[str]:
+async def _call(model: str, audio_path: str, lang: Optional[str], prompt: str) -> Optional[str]:
+    kwargs = {"model": model, "prompt": prompt}
+    if lang:
+        kwargs["language"] = lang
     with open(audio_path, "rb") as f:
-        result = await client.audio.transcriptions.create(
-            model="gpt-4o-transcribe",
-            file=f,
-            language=lang,
-            prompt=PROMPT_RU if lang == "ru" else PROMPT_UZ,
-        )
+        result = await client.audio.transcriptions.create(file=f, **kwargs)
     return (result.text or "").strip() or None
+
+
+async def _transcribe(audio_path: str, lang: str) -> Optional[str]:
+    if lang == "ru":
+        return await _call("gpt-4o-transcribe", audio_path, "ru", PROMPT_RU)
+
+    # gpt-4o-transcribe does not accept language="uz" (HTTP 400), so Uzbek
+    # goes through whisper-1, which supports it. If that fails, fall back to
+    # gpt-4o-transcribe without a language hint.
+    try:
+        text = await _call("whisper-1", audio_path, "uz", PROMPT_UZ)
+        if text:
+            return text
+    except Exception:
+        logger.exception("whisper-1 (uz) failed, falling back")
+    return await _call("gpt-4o-transcribe", audio_path, None, PROMPT_UZ)
 
 
 async def _convert_script(text: str, target: str) -> str:
