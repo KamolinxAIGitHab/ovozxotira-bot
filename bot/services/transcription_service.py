@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import re
@@ -60,10 +61,11 @@ async def _call(model: str, audio_path: str, lang: Optional[str], prompt: str) -
     return (result.text or "").strip() or None
 
 
-async def _transcribe(audio_path: str, lang: str) -> Optional[str]:
-    if lang == "ru":
-        return await _call("gpt-4o-transcribe", audio_path, "ru", PROMPT_RU)
+async def _transcribe_ru(audio_path: str) -> Optional[str]:
+    return await _call("gpt-4o-transcribe", audio_path, "ru", PROMPT_RU)
 
+
+async def _transcribe_uz(audio_path: str) -> Optional[str]:
     # gpt-4o-transcribe does not accept language="uz" (HTTP 400), so Uzbek
     # goes through whisper-1, which supports it. If that fails, fall back to
     # gpt-4o-transcribe without a language hint.
@@ -99,14 +101,29 @@ async def transcribe(audio_path: str, mode: str = "uz_cyr") -> Optional[str]:
     """mode: 'uz_cyr' | 'uz_lat' | 'ru'.
 
     - ru: speech is treated as Russian.
-    - uz_cyr / uz_lat: language is detected; Russian speech stays Russian,
-      Uzbek speech is returned in Cyrillic or Latin script.
+    - uz_cyr / uz_lat: language detection and the Uzbek transcription run in
+      parallel (faster). Russian speech is re-transcribed as Russian, Uzbek
+      speech is returned in Cyrillic or Latin script as chosen.
     """
     try:
-        lang = "ru" if mode == "ru" else await _detect_language(audio_path)
-        text = await _transcribe(audio_path, lang)
-        if not text or lang == "ru":
-            return text
+        if mode == "ru":
+            return await _transcribe_ru(audio_path)
+
+        lang, uz_text = await asyncio.gather(
+            _detect_language(audio_path),
+            _transcribe_uz(audio_path),
+            return_exceptions=True,
+        )
+        if isinstance(lang, BaseException):
+            lang = "uz"
+        if lang == "ru":
+            return await _transcribe_ru(audio_path)
+        if isinstance(uz_text, BaseException):
+            logger.error("Uzbek transcription failed: %r", uz_text)
+            return None
+        text = uz_text
+        if not text:
+            return None
 
         cyr, lat = _script_counts(text)
         if mode == "uz_cyr" and lat > cyr:
