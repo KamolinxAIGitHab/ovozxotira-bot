@@ -9,7 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.config import BOT_TOKEN, SUMMARY_HOUR, SUMMARY_MINUTE, VOICE_DIR, SUMMARIES_DIR
 from bot.database.repository import init_db
-from bot.handlers import commands, voice, export
+from bot.handlers import commands, voice, export, settings
 from bot.services.summary_service import generate_daily_summary
 
 logging.basicConfig(
@@ -32,6 +32,7 @@ async def main() -> None:
     )
     dp = Dispatcher()
     dp.include_router(commands.router)
+    dp.include_router(settings.router)
     dp.include_router(voice.router)
     dp.include_router(export.router)
 

@@ -45,6 +45,12 @@ async def init_db() -> None:
                 UNIQUE(user_id, summary_date)
             )
         """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_settings (
+                user_id    BIGINT PRIMARY KEY,
+                lang_mode  TEXT NOT NULL DEFAULT 'uz_cyr'
+            )
+        """)
 
 
 async def save_voice_message(
@@ -179,3 +185,30 @@ async def get_user_stats(user_id: int) -> dict:
             user_id,
         )
         return dict(row) if row else {}
+
+
+VALID_LANG_MODES = ("uz_cyr", "uz_lat", "ru")
+
+
+async def get_lang_mode(user_id: int) -> str:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT lang_mode FROM user_settings WHERE user_id = $1", user_id
+        )
+    mode = row["lang_mode"] if row else "uz_cyr"
+    return mode if mode in VALID_LANG_MODES else "uz_cyr"
+
+
+async def set_lang_mode(user_id: int, mode: str) -> None:
+    if mode not in VALID_LANG_MODES:
+        return
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO user_settings (user_id, lang_mode) VALUES ($1, $2)
+            ON CONFLICT (user_id) DO UPDATE SET lang_mode = EXCLUDED.lang_mode
+            """,
+            user_id, mode,
+        )

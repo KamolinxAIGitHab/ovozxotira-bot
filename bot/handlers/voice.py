@@ -1,3 +1,4 @@
+import html
 import logging
 
 from aiogram import Bot, F, Router
@@ -60,13 +61,14 @@ async def handle_voice_message(message: Message, bot: Bot) -> None:
         f"\U0001f3a4 Овозли хабар қабул қилинди ({duration_str}). Матнга айлантирилмоқда\u2026"
     )
 
-    transcript = await transcription_service.transcribe(local_path)
+    mode = await database.repository.get_lang_mode(user.id)
+    transcript = await transcription_service.transcribe(local_path, mode)
 
     if transcript:
         await database.repository.update_transcript(record_id, transcript)
 
         header = f"\U0001f3a4 Сақланди ({duration_str})\n\n\U0001f4dd <b>Транскрипция:</b>\n"
-        parts = split_text(transcript)
+        parts = [html.escape(p) for p in split_text(transcript)]
 
         if len(parts) == 1:
             await status_msg.edit_text(header + parts[0])
