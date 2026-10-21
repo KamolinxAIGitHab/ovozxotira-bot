@@ -78,12 +78,34 @@ async def _transcribe_ru(audio_path: str) -> Optional[str]:
     return await _call("gpt-4o-transcribe", audio_path, "ru", PROMPT_RU)
 
 
-async def _transcribe_uz(audio_path: str, mode: str = "uz_cyr") -> Optional[str]:
+# Seconds of speech vs. expected text: normal Uzbek speech gives ~8-14 characters
+# per second. A transcript far below this means the model stopped early.
+MIN_CHARS_PER_SEC = 4
+MIN_SECONDS_FOR_CHECK = 10
+
+
+async def _transcribe_uz(
+    audio_path: str, mode: str = "uz_cyr", duration: Optional[int] = None
+) -> Optional[str]:
     # Both whisper-1 and gpt-4o-transcribe reject language="uz" (HTTP 400), so
     # a request with it only wastes about a second before any fallback. Go
     # straight to gpt-4o-transcribe without a language hint.
     prompt = PROMPT_UZ_CYR if mode == "uz_cyr" else PROMPT_UZ
-    return await _call("gpt-4o-transcribe", audio_path, None, prompt)
+    text = await _call("gpt-4o-transcribe", audio_path, None, prompt)
+    if (
+        text
+        and duration
+        and duration >= MIN_SECONDS_FOR_CHECK
+        and len(text) < duration * MIN_CHARS_PER_SEC
+    ):
+        logger.warning(
+            "Suspiciously short transcript: %d chars for %ds audio, retrying once",
+            len(text), duration,
+        )
+        retry = await _call("gpt-4o-transcribe", audio_path, None, prompt)
+        if retry and len(retry) > len(text):
+            text = retry
+    return text
 
 
 async def _convert_script(text: str, target: str) -> str:
@@ -137,7 +159,9 @@ async def _timed(coro, timings: dict, key: str):
         timings[key] = time.monotonic() - t0
 
 
-async def transcribe(audio_path: str, mode: str = "uz_cyr") -> Optional[str]:
+async def transcribe(
+    audio_path: str, mode: str = "uz_cyr", duration: Optional[int] = None
+) -> Optional[str]:
     """mode: 'uz_cyr' | 'uz_lat' | 'ru'.
 
     Language detection and the Uzbek transcription run in parallel (faster).
@@ -152,7 +176,7 @@ async def transcribe(audio_path: str, mode: str = "uz_cyr") -> Optional[str]:
             _timed(_detect_language(audio_path), timings, "detect")
         )
         try:
-            uz_text = await _timed(_transcribe_uz(audio_path, mode), timings, "uz")
+            uz_text = await _timed(_transcribe_uz(audio_path, mode, duration), timings, "uz")
         except Exception as exc:  # handled below
             uz_text = exc
 

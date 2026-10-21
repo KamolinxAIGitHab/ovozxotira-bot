@@ -74,7 +74,9 @@ async def handle_voice_message(message: Message, bot: Bot) -> None:
 
     mode = await database.repository.get_lang_mode(user.id)
     started = time.monotonic()
-    transcript = await transcription_service.transcribe(local_path, mode)
+    transcript = await transcription_service.transcribe(
+        local_path, mode, duration=voice.duration
+    )
     elapsed = format_elapsed(time.monotonic() - started)
 
     duration_line = (
