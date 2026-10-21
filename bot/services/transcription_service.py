@@ -21,6 +21,11 @@ PROMPT_UZ = (
 PROMPT_UZ_CYR = "Бу ўзбек тилидаги суҳбат. Ucell, Uztelekom, Uzonline, интернет, банк, шартнома, харид."
 PROMPT_RU = "Это разговор на русском языке."
 
+# Letters/sequences that occur only in Uzbek, never in Russian speech. When the
+# Uzbek transcript contains one, there is no need to wait for language detection.
+_UZ_CYR_MARKERS = re.compile(r"[ЎўҚқҒғҲҳ]")
+_UZ_LAT_MARKERS = re.compile(r"[oOgG][ʻʼ'’`‘]")
+
 _CYR = re.compile(r"[Ѐ-ӿ]")
 _LAT = re.compile(r"[A-Za-z]")
 
@@ -33,6 +38,10 @@ _CONVERT_SYSTEM = (
     "ng = нг, q = қ, h = ҳ (x = х), yo = ё, yu = ю, ya = я, ye = е (word start) "
     "or ye, e = э at word start. Output only the converted text."
 )
+
+
+def _is_certainly_uzbek(text: Optional[str]) -> bool:
+    return bool(text) and bool(_UZ_CYR_MARKERS.search(text) or _UZ_LAT_MARKERS.search(text))
 
 
 def _script_counts(text: str) -> tuple[int, int]:
@@ -139,13 +148,23 @@ async def transcribe(audio_path: str, mode: str = "uz_cyr") -> Optional[str]:
     t_start = time.monotonic()
     timings: dict[str, float] = {}
     try:
-        lang, uz_text = await asyncio.gather(
-            _timed(_detect_language(audio_path), timings, "detect"),
-            _timed(_transcribe_uz(audio_path, mode), timings, "uz"),
-            return_exceptions=True,
+        detect_task = asyncio.ensure_future(
+            _timed(_detect_language(audio_path), timings, "detect")
         )
-        if isinstance(lang, BaseException):
+        try:
+            uz_text = await _timed(_transcribe_uz(audio_path, mode), timings, "uz")
+        except Exception as exc:  # handled below
+            uz_text = exc
+
+        if isinstance(uz_text, str) and _is_certainly_uzbek(uz_text):
+            # Uzbek-only letters found: skip waiting for (slow, variable) detection.
+            detect_task.cancel()
             lang = "uz"
+        else:
+            try:
+                lang = await detect_task
+            except Exception:
+                lang = "uz"
         if lang == "ru":
             return await _timed(_transcribe_ru(audio_path), timings, "ru")
         if isinstance(uz_text, BaseException):
