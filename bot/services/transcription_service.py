@@ -7,18 +7,19 @@ from typing import Optional
 
 from openai import AsyncOpenAI
 
+from bot.translit import latin_to_cyrillic
+
 logger = logging.getLogger(__name__)
 client = AsyncOpenAI()
 
 TEXT_MODEL = os.getenv("TEXT_MODEL", "gpt-4o-mini")
 
-PROMPT_UZ = (
-    "Bu o'zbek tilidagi suhbat. "
-    "Ucell, Uztelekom, Uzonline, internet, bank, shartnoma, xarid."
-)
-# Cyrillic prompt makes gpt-4o-transcribe answer in Cyrillic directly, so the
-# extra script-conversion call is usually not needed in uz_cyr mode.
-PROMPT_UZ_CYR = "Бу ўзбек тилидаги суҳбат. Ucell, Uztelekom, Uzonline, интернет, банк, шартнома, харид."
+# gpt-4o-mini-transcribe was faster and more accurate than gpt-4o-transcribe on
+# Uzbek speech in the ReelsTahlilBot comparison (tools/stt_compare.py):
+# gpt-4o-transcribe drifted into Azerbaijani/Kazakh spelling and produced endless
+# repeats. No language (uz is rejected by the API) and no prompt: both made the
+# results less stable. Uzbek comes back in Latin and is transliterated locally.
+STT_MODEL = os.getenv("STT_MODEL", "gpt-4o-mini-transcribe")
 PROMPT_RU = "Это разговор на русском языке."
 
 # Letters/sequences that occur only in Uzbek, never in Russian speech. When the
@@ -65,8 +66,10 @@ async def _detect_language(audio_path: str) -> str:
         return "uz"
 
 
-async def _call(model: str, audio_path: str, lang: Optional[str], prompt: str) -> Optional[str]:
-    kwargs = {"model": model, "prompt": prompt}
+async def _call(model: str, audio_path: str, lang: Optional[str], prompt: Optional[str]) -> Optional[str]:
+    kwargs = {"model": model}
+    if prompt:
+        kwargs["prompt"] = prompt
     if lang:
         kwargs["language"] = lang
     with open(audio_path, "rb") as f:
@@ -83,29 +86,40 @@ async def _transcribe_ru(audio_path: str) -> Optional[str]:
 MIN_CHARS_PER_SEC = 4
 MIN_SECONDS_FOR_CHECK = 10
 
+# The same short piece repeated 10+ times in a row is a model hallucination loop.
+_REPEAT_RE = re.compile(r"(.{1,8}?)\1{9,}")
 
-async def _transcribe_uz(
-    audio_path: str, mode: str = "uz_cyr", duration: Optional[int] = None
-) -> Optional[str]:
-    # Both whisper-1 and gpt-4o-transcribe reject language="uz" (HTTP 400), so
-    # a request with it only wastes about a second before any fallback. Go
-    # straight to gpt-4o-transcribe without a language hint.
-    prompt = PROMPT_UZ_CYR if mode == "uz_cyr" else PROMPT_UZ
-    text = await _call("gpt-4o-transcribe", audio_path, None, prompt)
-    if (
-        text
-        and duration
+
+def _collapse_repeats(text: str) -> str:
+    return _REPEAT_RE.sub(r"\1", text)
+
+
+def _looks_broken(text: Optional[str], duration: Optional[int]) -> bool:
+    if not text:
+        return False
+    if _REPEAT_RE.search(text):
+        return True
+    return bool(
+        duration
         and duration >= MIN_SECONDS_FOR_CHECK
         and len(text) < duration * MIN_CHARS_PER_SEC
-    ):
+    )
+
+
+async def _transcribe_uz(audio_path: str, duration: Optional[int] = None) -> Optional[str]:
+    text = await _call(STT_MODEL, audio_path, None, None)
+    if _looks_broken(text, duration):
         logger.warning(
-            "Suspiciously short transcript: %d chars for %ds audio, retrying once",
-            len(text), duration,
+            "Suspicious transcript (%d chars, %ss audio, repeats=%s), retrying once",
+            len(text), duration, bool(_REPEAT_RE.search(text)),
         )
-        retry = await _call("gpt-4o-transcribe", audio_path, None, prompt)
-        if retry and len(retry) > len(text):
-            text = retry
-    return text
+        retry = await _call(STT_MODEL, audio_path, None, None)
+        candidates = [t for t in (text, retry) if t]
+        text = min(
+            candidates,
+            key=lambda t: (_looks_broken(t, duration), -len(_collapse_repeats(t))),
+        )
+    return _collapse_repeats(text) if text else text
 
 
 async def _convert_script(text: str, target: str) -> str:
@@ -176,7 +190,7 @@ async def transcribe(
             _timed(_detect_language(audio_path), timings, "detect")
         )
         try:
-            uz_text = await _timed(_transcribe_uz(audio_path, mode, duration), timings, "uz")
+            uz_text = await _timed(_transcribe_uz(audio_path, duration), timings, "uz")
         except Exception as exc:  # handled below
             uz_text = exc
 
@@ -202,7 +216,7 @@ async def transcribe(
 
         cyr, lat = _script_counts(text)
         if mode == "uz_cyr" and lat > cyr:
-            text = await _timed(_convert_script(text, "cyrillic"), timings, "convert")
+            text = latin_to_cyrillic(text)
         elif mode == "uz_lat" and cyr > lat:
             text = await _timed(_convert_script(text, "latin"), timings, "convert")
         return text
