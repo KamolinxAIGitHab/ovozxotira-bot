@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import re
+import time
 from typing import Optional
 
 from openai import AsyncOpenAI
@@ -15,6 +16,9 @@ PROMPT_UZ = (
     "Bu o'zbek tilidagi suhbat. "
     "Ucell, Uztelekom, Uzonline, internet, bank, shartnoma, xarid."
 )
+# Cyrillic prompt makes gpt-4o-transcribe answer in Cyrillic directly, so the
+# extra script-conversion call is usually not needed in uz_cyr mode.
+PROMPT_UZ_CYR = "Бу ўзбек тилидаги суҳбат. Ucell, Uztelekom, Uzonline, интернет, банк, шартнома, харид."
 PROMPT_RU = "Это разговор на русском языке."
 
 _CYR = re.compile(r"[Ѐ-ӿ]")
@@ -65,17 +69,12 @@ async def _transcribe_ru(audio_path: str) -> Optional[str]:
     return await _call("gpt-4o-transcribe", audio_path, "ru", PROMPT_RU)
 
 
-async def _transcribe_uz(audio_path: str) -> Optional[str]:
-    # gpt-4o-transcribe does not accept language="uz" (HTTP 400), so Uzbek
-    # goes through whisper-1, which supports it. If that fails, fall back to
-    # gpt-4o-transcribe without a language hint.
-    try:
-        text = await _call("whisper-1", audio_path, "uz", PROMPT_UZ)
-        if text:
-            return text
-    except Exception:
-        logger.exception("whisper-1 (uz) failed, falling back")
-    return await _call("gpt-4o-transcribe", audio_path, None, PROMPT_UZ)
+async def _transcribe_uz(audio_path: str, mode: str = "uz_cyr") -> Optional[str]:
+    # Both whisper-1 and gpt-4o-transcribe reject language="uz" (HTTP 400), so
+    # a request with it only wastes about a second before any fallback. Go
+    # straight to gpt-4o-transcribe without a language hint.
+    prompt = PROMPT_UZ_CYR if mode == "uz_cyr" else PROMPT_UZ
+    return await _call("gpt-4o-transcribe", audio_path, None, prompt)
 
 
 async def _convert_script(text: str, target: str) -> str:
@@ -121,6 +120,14 @@ async def _translate_to_russian(text: str) -> str:
         return text
 
 
+async def _timed(coro, timings: dict, key: str):
+    t0 = time.monotonic()
+    try:
+        return await coro
+    finally:
+        timings[key] = time.monotonic() - t0
+
+
 async def transcribe(audio_path: str, mode: str = "uz_cyr") -> Optional[str]:
     """mode: 'uz_cyr' | 'uz_lat' | 'ru'.
 
@@ -129,16 +136,18 @@ async def transcribe(audio_path: str, mode: str = "uz_cyr") -> Optional[str]:
     in Cyrillic or Latin script (uz_cyr / uz_lat), or translated into Russian
     (ru).
     """
+    t_start = time.monotonic()
+    timings: dict[str, float] = {}
     try:
         lang, uz_text = await asyncio.gather(
-            _detect_language(audio_path),
-            _transcribe_uz(audio_path),
+            _timed(_detect_language(audio_path), timings, "detect"),
+            _timed(_transcribe_uz(audio_path, mode), timings, "uz"),
             return_exceptions=True,
         )
         if isinstance(lang, BaseException):
             lang = "uz"
         if lang == "ru":
-            return await _transcribe_ru(audio_path)
+            return await _timed(_transcribe_ru(audio_path), timings, "ru")
         if isinstance(uz_text, BaseException):
             logger.error("Uzbek transcription failed: %r", uz_text)
             return None
@@ -146,14 +155,20 @@ async def transcribe(audio_path: str, mode: str = "uz_cyr") -> Optional[str]:
         if not text:
             return None
         if mode == "ru":
-            return await _translate_to_russian(text)
+            return await _timed(_translate_to_russian(text), timings, "translate")
 
         cyr, lat = _script_counts(text)
         if mode == "uz_cyr" and lat > cyr:
-            text = await _convert_script(text, "cyrillic")
+            text = await _timed(_convert_script(text, "cyrillic"), timings, "convert")
         elif mode == "uz_lat" and cyr > lat:
-            text = await _convert_script(text, "latin")
+            text = await _timed(_convert_script(text, "latin"), timings, "convert")
         return text
     except Exception:
         logger.exception("Transcription failed: %s", audio_path)
         return None
+    finally:
+        logger.info(
+            "Transcription stages: %s, total=%.1fs",
+            ", ".join(f"{k}={v:.1f}s" for k, v in timings.items()),
+            time.monotonic() - t_start,
+        )
